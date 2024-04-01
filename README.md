@@ -1,4 +1,4 @@
-WORKSHOP_TITLE
+Causal inference in R
 ================
 
 ### posit::conf(2024)
