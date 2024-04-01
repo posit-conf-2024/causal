@@ -3,7 +3,7 @@ Causal inference in R
 
 ### posit::conf(2024)
 
-by INSTRUCTOR_NAME
+by Malcolm Barrett, Travis Gerke
 
 -----
 
