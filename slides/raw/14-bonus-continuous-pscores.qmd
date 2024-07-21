@@ -1,0 +1,345 @@
+---
+title: "Continuous exposures with propensity scores"
+author: "Malcolm Barrett"
+institute: "Stanford University"
+format: "kakashi-revealjs"
+---
+
+```{r}
+#| label: setup
+#| include: false
+options(
+  tibble.max_extra_cols = 6, 
+  tibble.width = 60
+)
+
+library(tidyverse)
+library(broom)
+library(causaldata)
+library(touringplans)
+library(propensity)
+
+set.seed(1000)
+```
+
+## {background-color="#23373B" .huge .center}
+### *Warning!* Propensity score weights are sensitive to positivity violations for continuous exposures. 
+
+## {background-color="#23373B" .huge .center}
+### **The story so far**
+
+---
+
+## Propensity score weighting {background-color="#23373B"}
+
+1. Fit a propensity model predicting exposure `x`, `x + z` where z is all covariates
+2. Calculate weights 
+3. Fit an outcome model estimating the effect of `x` on `y` weighted by the propensity score
+
+## Continous exposures {background-color="#23373B"}
+
+1. Use a model like `lm(x ~ z)` for the propensity score model.
+2. Use `wt_ate()` with `.fitted` and `.sigma`; transforms using `dnorm()` to get on probability-like scale.
+3. Apply the weights to the outcome model as normal!
+
+## Alternative: quantile binning {background-color="#23373B" .small} 
+
+1. Bin the continuous exposure into quantiles and use categorical regression like a multinomial model to calculate probabilities.
+2. Calculate the weights where the propensity score is the probability you fall into the quantile you actually fell into. Same as the binary ATE!
+3. Same workflow for the outcome model
+
+## 1. Fit a model for `exposure ~ confounders`
+
+```{r}
+#| eval: false
+model <- lm(
+  exposure ~ confounder_1 + confounder_2,
+  data = df
+)
+```
+
+## 2. Calculate the weights with `wt_ate()`
+
+```{r}
+#| eval: false
+#| code-line-numbers: "|3-8"
+model |>
+  augment(data = df) |>
+  mutate(wts = wt_ate( 
+    exposure, 
+    .fitted, 
+    # .sigma is from augment()
+    .sigma = .sigma
+  )) 
+```
+
+## Does change in smoking intensity (`smkintensity82_71`) affect weight gain among lighter smokers?
+
+```{r}
+nhefs_light_smokers <- nhefs_complete |>
+  filter(smokeintensity <= 25)
+```
+
+## 1. Fit a model for `exposure ~ confounders`
+
+```{r}
+#| code-line-numbers: "|1-2|3-6"
+nhefs_model <- lm(
+  smkintensity82_71 ~ sex + race + age + I(age^2) + 
+    education + smokeintensity + I(smokeintensity^2) + 
+    smokeyrs + I(smokeyrs^2) + exercise + active + 
+    wt71 + I(wt71^2), 
+  data = nhefs_light_smokers
+)
+```
+
+## 2. Calculate the weights with `wt_ate()`
+
+```{r}
+#| code-line-numbers: "|3-7"
+nhefs_wts <- nhefs_model |> 
+  augment(data = nhefs_light_smokers) |> 
+  mutate(wts = wt_ate(
+    smkintensity82_71, 
+    .fitted,
+    .sigma = .sigma
+  )) 
+```
+
+
+## 2. Calculate the weights with `wt_ate()`
+
+```{r}
+nhefs_wts
+```
+
+## Do *posted* wait times at 8 am affect *actual* wait times at 9 am?
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig.width: 6.5
+library(tidyverse)
+library(ggdag)
+library(ggokabeito)
+
+geom_dag_label_repel <- function(..., seed = 10) {
+  ggdag::geom_dag_label_repel(
+    aes(x, y, label = label),
+    box.padding = 3.5, 
+    inherit.aes = FALSE,
+    max.overlaps = Inf, 
+    family = "sans",
+    seed = seed,
+    label.size = NA, 
+    label.padding = 0.1,
+    size = 14 / 3,
+    ...
+  ) 
+}
+
+coord_dag <- list(
+  x = c(Season = -1, close = -1, weather = -2, extra = 0, x = 1, y = 2),
+  y = c(Season = -1, close = 1, weather = 0, extra = 0, x = 0, y = 0)
+)
+
+labels <- c(
+  extra = "Extra Magic Morning",
+  x = "Average posted wait ",
+  y = "Average acutal wait",
+  Season = "Ticket Season",
+  weather = "Historic high temperature",
+  close = "Time park closed"
+)
+
+dagify(
+    y ~ x + close + Season + weather + extra,
+    x ~ weather + close + Season + extra,
+    extra ~ weather + close + Season,
+    coords = coord_dag,
+    labels = labels,
+    exposure = "x",
+    outcome = "y"
+) |>
+    tidy_dagitty() |>
+    node_status() |>
+    ggplot(
+        aes(x, y, xend = xend, yend = yend, color = status)
+    ) +
+    geom_dag_edges_arc(curvature = c(rep(0, 7), .2, 0, .2, .2, 0), edge_colour = "grey70") +
+    geom_dag_point() +
+    geom_dag_label_repel(seed = 1602) + 
+    scale_color_okabe_ito(na.value = "grey90") +
+    theme_dag() +
+    theme(
+        legend.position = "none",
+        axis.text.x = element_text()
+    ) +
+    coord_cartesian(clip = "off") +
+    scale_x_continuous(
+        limits = c(-2.25, 2.25),
+        breaks = c(-2, -1, 0, 1, 2),
+        labels = c(
+            "\n(one year ago)",
+            "\n(6 months ago)",
+            "\n(3 months ago)",
+            "8am-9am\n(Today)",
+            "9am-10am\n(Today)"
+        )
+    )
+```
+
+## *Your Turn 1*
+
+### Fit a model using `lm()` with `wait_minutes_posted_avg` as the outcome and the confounders identified in the DAG.
+### Use `augment()` to add model predictions to the data frame
+### In `wt_ate()`, calculate the weights using `wait_minutes_posted_avg`, `.fitted`, and `.sigma`
+
+`r countdown::countdown(minutes = 5)`
+
+## *Your Turn 1*
+
+```{r}
+#| include: false
+eight <- seven_dwarfs_train_2018 |>
+  filter(wait_hour == 8) |>
+  select(-wait_minutes_posted_avg)
+
+nine <- seven_dwarfs_train_2018 |>
+  filter(wait_hour == 9) |>
+  select(park_date, wait_minutes_posted_avg)
+
+wait_times <- eight |>
+  left_join(nine, by = "park_date") |>
+  drop_na(wait_minutes_posted_avg)
+```
+
+```{r}
+post_time_model <- lm(
+  wait_minutes_posted_avg ~
+    park_close + park_extra_magic_morning + 
+    park_temperature_high + park_ticket_season, 
+  data = wait_times
+)
+```
+
+## *Your Turn 1*
+
+```{r}
+wait_times_wts <- post_time_model |>
+  augment(data = wait_times) |>
+  mutate(wts = wt_ate(
+    wait_minutes_posted_avg, .fitted, .sigma = .sigma
+  ))
+```
+
+## *Stabilizing extreme weights*
+
+```{r}
+#| echo: false
+nhefs_wts |>
+  ggplot(aes(wts)) +
+  geom_density(col = "#E69F00", fill = "#E69F0095") + 
+  scale_x_log10() + 
+  theme_minimal(base_size = 20) + 
+  xlab("Weights")
+```
+
+## Stabilizing extreme weights {background-color="#23373B"}
+
+1. Fit an intercept-only model (e.g. `lm(x ~ 1)`) or use mean and SD of `x`
+2. Calculate weights from this model.
+3. Divide these weights by the propensity score weights. `wt_ate(.., stabilize = TRUE)` does this all!
+
+## Calculate stabilized weights 
+
+```{r}
+#| code-line-numbers: "|7"
+nhefs_swts <- nhefs_model |>
+  augment(data = nhefs_light_smokers) |>
+  mutate(swts = wt_ate(
+    smkintensity82_71, 
+    .fitted, 
+    .sigma = .sigma,
+    stabilize = TRUE
+  ))
+```
+
+## Stabilizing extreme weights
+
+```{r}
+#| echo: false
+ggplot(nhefs_swts, aes(swts)) +
+  geom_density(col = "#E69F00", fill = "#E69F0095") + 
+  scale_x_log10() + 
+  theme_minimal(base_size = 20) + 
+  xlab("Stabilized Weights")
+```
+
+## *Your Turn 2*
+
+### Re-fit the above using stabilized weights
+
+`r countdown::countdown(minutes = 3)`
+
+## *Your Turn 2*
+
+```{r}
+wait_times_swts <- post_time_model |>
+  augment(data = wait_times) |>
+  mutate(swts = wt_ate(
+    wait_minutes_posted_avg, 
+    .fitted,
+    .sigma = .sigma,
+    stabilize = TRUE
+  ))
+```
+
+## Fitting the outcome model {background-color="#23373B"}
+
+1. Use the stabilized weights in the outcome model. Nothing new here!
+
+---
+
+```{r}
+#| code-line-numbers: "|3,8"
+lm(
+  wt82_71 ~ smkintensity82_71, 
+  weights = swts, 
+  data = nhefs_swts
+) |>
+  tidy() |>
+  filter(term == "smkintensity82_71") |>
+  mutate(estimate = estimate * -10) 
+```
+
+## *Your Turn 3*
+
+### Estimate the relationship between posted wait times and actual wait times using the stabilized weights we just created. 
+
+`r countdown::countdown(minutes = 3)`
+
+## *Your Turn 3*
+
+```{r}
+lm(
+  wait_minutes_actual_avg ~ wait_minutes_posted_avg, 
+  weights = swts, 
+  data = wait_times_swts
+) |>
+  tidy() |>
+  filter(term == "wait_minutes_posted_avg") |>
+  mutate(estimate = estimate * 10)
+```
+
+
+## Diagnosing issues {background-color="#23373B"}
+
+1. Extreme weights even after stabilization
+2. Bootstrap: non-normal distribution
+3. Bootstrap: estimate different from original model
+
+## More info {background-color="#23373B"}
+
+### https://github.com/LucyMcGowan/writing-positivity-continous-ps

@@ -1,0 +1,99 @@
+---
+title: "Using Propensity Scores"
+format: html
+---
+
+
+```{r}
+#| label: setup
+library(tidyverse)
+library(broom)
+library(touringplans)
+library(propensity)
+library(halfmoon)
+```
+
+We are interested in examining the relationship between whether there were "Extra Magic Hours" in the morning (the **exposure**) and the average wait time for the Seven Dwarfs Mine Train the same day between 9am and 10am (the **outcome**).
+
+Below is the propensity score model you created in the previous exercise.
+
+```{r}
+seven_dwarfs <- seven_dwarfs_train_2018 |>
+  filter(wait_hour == 9)
+
+propensity_model <- glm(
+  park_extra_magic_morning ~ park_ticket_season + park_close + park_temperature_high,
+  data = seven_dwarfs,
+  family = binomial()
+)
+
+seven_dwarfs_prop <- propensity_model |>
+  augment(type.predict = "response", data = seven_dwarfs)
+```
+
+## Your Turn 1 (Matching)
+
+Create at "matched" data set using the same propensity score model as above and a caliper of 0.2. 
+
+1. Provide `matchit()` the formula for the propensity score.
+2. Using the `link` and `caliper` arguments, create a caliper of 0.2 SDs on the linear logit scale.
+3. Extract the matched datasets into a new data frame called `matched_df`.
+
+```{r}
+library(MatchIt)
+matched_dwarfs <- matchit(
+  ___,
+  data = seven_dwarfs,
+  ___,
+  ___
+)
+
+matched_df <- ___(matched_dwarfs)
+```
+
+## Your Turn 2 (Weighting)
+
+Add the ATE weights to the data frame, `seven_dwarfs_prop`
+
+```{r}
+seven_dwarfs_prop <- seven_dwarfs_prop |>
+  mutate(w_ate = ___)
+```
+
+
+Stretch Goal 1: 
+
+Add ATM weights to the data frame, `seven_dwarfs_prop`
+
+```{r}
+seven_dwarfs_prop <- seven_dwarfs_prop |>
+  mutate(w_atm = ___)
+```
+
+Stretch Goal 2: 
+
+Update the code below to examine the distribution of the weighted sample. **HINT** the part that needs to be updated is the `weight` parameter in two of the `geom_mirror_histogram()` call.
+
+
+```{r}
+#| warning: false
+seven_dwarfs_prop |> 
+  mutate(
+    park_extra_magic_morning = factor(park_extra_magic_morning)
+  ) |> 
+  ggplot(aes(.fitted)) +
+  geom_mirror_histogram(
+    aes(group = park_extra_magic_morning), 
+    bins = 30
+  ) +
+  geom_mirror_histogram(
+    aes(fill = park_extra_magic_morning, weight = ______), 
+    alpha = .5, 
+    bins = 30
+  ) +
+  geom_hline(yintercept = 0, lwd = 0.5) +
+  theme_minimal() +
+  scale_y_continuous(labels = abs) +
+  scale_fill_manual(values = c("blue", "green")) +
+  labs(x = "p", fill = "Extra Magic Morning")
+```

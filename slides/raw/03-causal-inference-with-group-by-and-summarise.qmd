@@ -1,0 +1,308 @@
+---
+title: "Causal Inference with `group_by` and `summarise`"
+author: "Lucy D'Agostino McGowan"
+institute: "Wake Forest University"
+format: "kakashi-revealjs"
+---
+
+## Observational Studies {background-color="#23373B"}
+
+```{r}
+#| include: false
+library(tidyverse)
+set.seed(1)
+options(
+  tibble.max_extra_cols = 6, 
+  tibble.width = 60
+)
+```
+
+**Goal**: To answer a research question
+
+![](img/obs-studies.png)
+
+## Observational Studies {background-color="#23373B"}
+
+**Goal**: To answer a research question
+
+![](img/obs-studies-2.png)
+
+
+## ~~Observational Studies~~ {background-color="#23373B"}
+### **Randomized Controlled Trial**
+
+![](img/randomized.png)
+
+
+## ~~Observational Studies~~ {background-color="#23373B"}
+### **Randomized Controlled Trial**
+
+![](img/randomized-2.png)
+
+## Observational Studies {background-color="#23373B"}
+
+![](img/obs-studies-3.png)
+
+## {background-color="#23373B"}
+
+![](img/trt.png)
+
+## {background-color="#23373B"}
+
+![](img/trt-conf.png)
+
+## Confounding {background-color="#23373B"}
+
+![](img/conf-2.png)
+
+## Confounding {background-color="#23373B"}
+
+![](img/conf-3.png)
+
+## One binary confounder {background-color="#23373B" .center}
+
+## Simulation
+
+```{r}
+#| code-line-numbers: "|1|3|4-8|9"
+#| output-location: slide
+n <- 1000 
+sim <- tibble(
+  confounder = rbinom(n, 1, 0.5),
+  p_exposure = case_when(
+    confounder == 1 ~ 0.75,
+    confounder == 0 ~ 0.25
+  ),
+  exposure = rbinom(n, 1, p_exposure),
+  outcome = confounder + rnorm(n)
+) |> select(-p_exposure)
+
+sim
+```
+
+## Simulation
+
+```{r}
+lm(outcome ~ exposure, data = sim)
+```
+
+---
+
+## Simulation
+
+```{r}
+#| code-line-numbers: "|2|3"
+#| output-location: fragment
+sim |>
+  group_by(exposure) |>
+  summarise(avg_y = mean(outcome)) 
+```
+
+## Simulation
+
+```{r}
+sim |>
+  group_by(exposure) |>
+  summarise(avg_y = mean(outcome)) |>
+  pivot_wider(
+    names_from = exposure, 
+    values_from = avg_y,  
+    names_prefix = "x_"
+  ) |>
+  summarise(estimate = x_1 - x_0) 
+```
+
+## *Your Turn 1* (`03-ci-with-group-by-and-summarise-exercises.qmd`)
+
+### Group the dataset by `confounder` and `exposure`
+### Calculate the mean of the `outcome` for the groups
+
+`r countdown::countdown(minutes = 3)`
+
+## *Your Turn 1*
+
+```{r}
+#| code-line-numbers: "|2"
+#| output-location: fragment
+sim |>
+  group_by(confounder, exposure) |>
+  summarise(avg_y = mean(outcome))
+```
+
+## *Your Turn 1*
+
+```{r}
+#| code-line-numbers: "|2"
+#| output-location: fragment
+sim |>
+  group_by(confounder, exposure) |>
+  summarise(avg_y = mean(outcome)) |>
+  pivot_wider(
+    names_from = exposure,
+    values_from = avg_y,  
+    names_prefix = "x_"
+  ) |>
+  summarise(estimate = x_1 - x_0) |>
+  # note: we would need to weight this 
+  # if the confounder groups were not equal sized
+  summarise(estimate = mean(estimate))
+```
+
+. . .
+
+`r emo::ji("tada")`
+
+## Two binary confounders {background-color="#23373B" .center}
+
+## Simulation
+
+```{r}
+#| code-line-numbers: "|4-10,12"
+#| output-location: slide
+n <- 1000
+sim2 <- tibble(
+  confounder_1 = rbinom(n, 1, 0.5),
+  confounder_2 = rbinom(n, 1, 0.5), 
+  p_exposure = case_when(
+    confounder_1 == 1 & confounder_2 == 1 ~ 0.75,
+    confounder_1 == 0 & confounder_2 == 1 ~ 0.9,
+    confounder_1 == 1 & confounder_2 == 0 ~ 0.2,
+    confounder_1 == 0 & confounder_2 == 0 ~ 0.1,
+  ),
+  exposure = rbinom(n, 1, p_exposure),
+  outcome = confounder_1 + confounder_2 + rnorm(n) 
+) |> select(-p_exposure)
+
+sim2
+```
+
+## Simulation
+
+```{r}
+lm(outcome ~ exposure, data = sim2)
+```
+
+## *Your Turn 2*
+
+### Group the dataset by the confounders and exposure
+### Calculate the mean of the outcome for the groups
+
+`r countdown::countdown(minutes = 2)`
+
+## *Your Turn 2*
+
+```{r}
+#| code-line-numbers: "|2"
+#| output-location: fragment
+sim2 |>
+  group_by(confounder_1, confounder_2, exposure) |>
+  summarise(avg_y = mean(outcome)) |>
+  pivot_wider(
+    names_from = exposure,
+    values_from = avg_y,  
+    names_prefix = "x_"
+  ) |>
+  summarise(estimate = x_1 - x_0, .groups = "drop") |>
+  summarise(estimate = mean(estimate)) 
+```
+
+## Simulation
+
+```{r}
+#| code-line-numbers: "|1"
+#| output-location: slide
+n <- 100000
+big_sim2 <- tibble(
+  confounder_1 = rbinom(n, 1, 0.5),
+  confounder_2 = rbinom(n, 1, 0.5), 
+  p_exposure = case_when(
+    confounder_1 == 1 & confounder_2 == 1 ~ 0.75,
+    confounder_1 == 0 & confounder_2 == 1 ~ 0.9,
+    confounder_1 == 1 & confounder_2 == 0 ~ 0.2,
+    confounder_1 == 0 & confounder_2 == 0 ~ 0.1,
+  ),
+  exposure = rbinom(n, 1, p_exposure),
+  outcome = confounder_1 + confounder_2 + rnorm(n) 
+) |> select(-p_exposure)
+
+big_sim2
+```
+
+## Simulation
+
+```{r}
+lm(outcome ~ exposure, data = big_sim2)
+```
+
+## Simulation
+
+```{r}
+#| code-line-numbers: "|2"
+#| output-location: fragment
+big_sim2 |>
+  group_by(confounder_1, confounder_2, exposure) |>
+  summarise(avg_y = mean(outcome)) |>
+  pivot_wider(
+    names_from = exposure,
+    values_from = avg_y,  
+    names_prefix = "x_"
+  ) |>
+  summarise(estimate = x_1 - x_0, .groups = "drop") |>
+  summarise(estimate = mean(estimate))  
+```
+
+
+## Continuous confounder? {background-color="#23373B" .center}
+
+## Simulation
+
+```{r}
+#| code-line-numbers: "|3"
+#| output-location: slide
+n <- 10000 
+sim3 <- tibble(
+  confounder = rnorm(n), 
+  p_exposure = exp(confounder) / (1 + exp(confounder)),
+  exposure = rbinom(n, 1, p_exposure),
+  outcome = confounder + rnorm(n) 
+) |> select(-p_exposure)
+
+sim3
+```
+
+## Simulation
+
+```{r}
+lm(outcome ~ exposure, data = sim3)
+```
+
+## *Your Turn 3*
+
+### Use `ntile()` from dplyr to calculate a binned version of `confounder` called `confounder_q`. We'll create a variable with 5 bins.
+### Group the dataset by the binned variable you just created and exposure
+### Calculate the mean of the outcome for the groups
+
+`r countdown::countdown(minutes = 3)`
+
+## *Your Turn 3*
+
+```{r}
+#| code-line-numbers: "|2|3-4"
+#| output-location: fragment
+sim3 |>
+  mutate(confounder_q = ntile(confounder, 5)) |>
+  group_by(confounder_q, exposure) |>
+  summarise(avg_y = mean(outcome)) |>
+  pivot_wider(
+    names_from = exposure,
+    values_from = avg_y,  
+    names_prefix = "x_"
+  ) |>
+  summarise(estimate = x_1 - x_0) |>
+  summarise(estimate = mean(estimate))
+```
+
+## {background-color="#23373B" .center .huge}
+
+### What if we could come up with a **summary score** of all confounders?
+

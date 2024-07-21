@@ -1,0 +1,135 @@
+---
+title: "Propensity Scores"
+format: html
+---
+
+```{r}
+#| label: setup
+library(tidyverse)
+library(broom)
+library(touringplans)
+library(ggdag)
+library(ggokabeito)
+```
+
+For Your Turn, we'll be looking at an example using Walt Disney World ride data from the touringplans package.
+
+Historically, guests who stayed in a Walt Disney World resort hotel were able to access the park during "Extra Magic Hours" during which the park was closed to all other guests.
+These extra hours could be in the morning or evening.
+The Seven Dwarfs Mine Train is a ride at Walt Disney World's Magic Kingdom. Typically, each day Magic Kingdom may or may not be selected to have these "Extra Magic Hours".
+
+We are interested in examining the relationship between whether there were "Extra Magic Hours" in the morning and the average wait time for the Seven Dwarfs Mine Train the same day between 9am and 10am.
+
+Below is a proposed DAG for this question.
+
+*Render this document to see the DAG or refer to the slides*.
+
+```{r}
+set.seed(1234)
+
+coord_dag <- list(
+  x = c(season = 0, close = 0, weather = -1, emm = 1, wait_posted = 2),
+  y = c(season = -1, close = 1, weather = 0, emm = 0, wait_posted = 0)
+)
+
+labels <- c(
+  emm = "Extra Magic Morning",
+  wait_posted = "Average wait",
+  season = "Ticket Season",
+  weather = "Historic high temperature",
+  close = "Time park closed"
+)
+
+dagify(
+  wait_posted ~ emm + close + season + weather,
+  emm ~ weather + close + season,
+  coords = coord_dag,
+  labels = labels,
+  exposure = "emm",
+  outcome = "wait_posted"
+) |>
+  tidy_dagitty() |>
+  node_status() |>
+  ggplot(
+    aes(x, y, xend = xend, yend = yend, color = status)
+  ) +
+  geom_dag_edges_arc(curvature = c(rep(0, 6), .3)) +
+  geom_dag_point() +
+  geom_dag_label_repel(
+    aes(x, y, label = label),
+    box.padding = 3.5, 
+    inherit.aes = FALSE,
+    max.overlaps = Inf, 
+    family = "sans",
+    seed = 1630,
+    label.size = NA, 
+    label.padding = 0.1,
+    size = 14 / 3
+  ) +
+  scale_color_okabe_ito(na.value = "grey90") +
+  theme_dag() +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text()
+  ) +
+  coord_cartesian(clip = "off") +
+  scale_x_continuous(
+    limits = c(-1.25, 2.25),
+    breaks = c(-1, 0, 1, 2),
+    labels = c(
+      "\n(one year ago)",
+      "\n(6 months ago)",
+      "\n(3 months ago)",
+      "9am - 10am\n(Today)"
+    )
+  )
+```
+
+Here we are proposing that there are three confounders: the historic high temperature on the day, the time the park closed, and the ticket season: value, regular, or peak.
+
+We can build a propensity score model using the `seven_dwarfs_train_2018` data set from the touringplans package.
+Each row of this dataset contains information about the Seven Dwarfs Mine Train during a certain hour on a given day.
+First we need to subset the data to only include average wait times between 9 and 10 am.
+
+```{r}
+seven_dwarfs <- seven_dwarfs_train_2018 |>
+  filter(wait_hour == 9)
+```
+
+Here's a data dictionary of the variables we need in the `seven_dwarfs` data set:
+
+| Variable                       | Column in `seven_dwarfs` |
+|--------------------------------|--------------------------|
+| Posted Wait Time (outcome)     | `wait_minutes_posted_avg`|
+| Extra Magic Morning (exposure) | `park_extra_magic_morning`    |
+| Ticket Season                  | `park_ticket_season`      |
+| Closing Time                   | `park_close`                  |
+| Historic Temperature           | `park_temperature_high`        |
+
+## Your Turn
+
+Now, fit a propensity score model for `park_extra_magic_morning` using the above proposed confounders.
+
+```{r}
+propensity_model <- ___(
+  ___ ~ ___,
+  data = seven_dwarfs,
+  family = _____
+)
+```
+
+Add the propensity scores to the `seven_dwarfs` data set, call this new dataset `df`.
+
+```{r}
+df <- propensity_model |>
+  ____(type.predict = ____, data = ____)
+```
+
+Stretch Goal 1:
+
+Examine two histograms of the propensity scores, one days with Extra Magic Morning (`park_extra_magic_morning == 1`) and one for days without it (`park_extra_magic_morning == 0`).
+How do these compare?
+
+```{r}
+
+```

@@ -1,0 +1,76 @@
+---
+title: "Outcome Model"
+format: html
+---
+
+
+```{r}
+#| label: setup
+library(tidyverse)
+library(broom)
+library(touringplans)
+library(rsample)
+library(propensity)
+
+seven_dwarfs <- seven_dwarfs_train_2018 |>
+  filter(wait_hour == 9)
+```
+
+We are interested in examining the relationship between whether there were "Extra Magic Hours" in the morning (the **exposure**) and the average wait time for the Seven Dwarfs Mine Train the same day between 9am and 10am (the **outcome**).
+
+## Your turn
+
+Create a function called `ipw_fit` that fits the propensity score model from Exercise 03, incorporates the ATE weights calculated in Exercise 04, and fits a weighted outcome model.
+
+```{r}
+fit_ipw <- function(split, ...) { 
+  .df <- ____
+  
+  # fit propensity score model
+  
+  # calculate ATE weights
+
+  # fit correctly bootstrapped ipw model 
+  lm(___ ~ ___, data = .df, weights = ___) |>
+    tidy() 
+}
+```
+
+Bootstrap this result 1000 times.
+
+```{r}
+set.seed(1234)
+
+ipw_results <- ____(___, 1000, apparent = TRUE) |>
+  mutate(boot_fits = map(splits, _____)) 
+```
+
+Check out the distribution of estimates (**no need to change this code**)
+
+```{r}
+ipw_results |>
+  mutate(
+    estimate = map_dbl(
+      boot_fits,
+      # pull the `estimate` for `park_extra_magic_morning` for each fit
+      \(.fit) .fit |>
+        filter(term == "park_extra_magic_morning") |>
+        pull(estimate)
+    )
+  ) |>
+  ggplot(aes(estimate)) +
+  geom_histogram(fill = "#D55E00FF", color = "white", alpha = 0.8) + 
+  theme_minimal()
+```
+
+Calculate the confidence interval
+
+```{r}
+boot_estimate <- ____(____, ____) |>
+  filter(term == ____)
+
+boot_estimate
+```
+
+
+Stretch goal: Do the same for a model using matching.
